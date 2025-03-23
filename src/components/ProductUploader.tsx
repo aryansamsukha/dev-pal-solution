@@ -73,65 +73,91 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
           const sheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
           
-          // Convert to JSON with header: 1 option to get array of arrays first
-          // This helps us debug the actual structure of the Excel file
+          // First, get raw data as arrays to inspect structure
           const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
           console.log("Raw Excel data:", rawData);
           
-          // Now convert with headers
-          const json = XLSX.utils.sheet_to_json(worksheet);
-          console.log("JSON data with headers:", json);
+          // Find the header row (the one with "Item Code", "Photo", etc.)
+          let headerRowIndex = -1;
+          for (let i = 0; i < rawData.length; i++) {
+            const row = rawData[i];
+            if (Array.isArray(row) && row.includes("Item Code")) {
+              headerRowIndex = i;
+              break;
+            }
+          }
           
-          // Map Excel columns to our product structure, checking multiple possible column names
-          const products: ProductType[] = json.map((row: any, index) => {
-            console.log("Processing row:", row);
+          if (headerRowIndex === -1) {
+            throw new Error("Could not find header row with 'Item Code' column");
+          }
+          
+          console.log("Header row found at index:", headerRowIndex);
+          
+          // Extract header names from the header row
+          const headers = rawData[headerRowIndex];
+          
+          // Get all data rows after the header
+          const dataRows = rawData.slice(headerRowIndex + 1);
+          
+          // Filter out empty rows
+          const nonEmptyRows = dataRows.filter(row => 
+            Array.isArray(row) && row.length > 0 && row.some(cell => cell !== null && cell !== undefined && cell !== "")
+          );
+          
+          console.log("Headers:", headers);
+          console.log("Data rows:", nonEmptyRows);
+          
+          // Map data rows to products
+          const products: ProductType[] = nonEmptyRows.map((row, index) => {
+            // Use column indices from header row to get proper values
+            const sNoIndex = headers.indexOf("S.No.");
+            const photoIndex = headers.indexOf("Photo");
+            const codeIndex = headers.indexOf("Item Code");
+            const descIndex = headers.indexOf("Description");
+            const finishIndex = headers.indexOf("Finish");
+            const sizeIndex = headers.indexOf("Size");
+            const lIndex1 = headers.indexOf("L");
+            const wIndex1 = headers.indexOf("W");
+            const hIndex1 = headers.indexOf("H");
             
-            // Try to parse numeric values safely
-            const parseNumeric = (value: any): number => {
+            // Some files have two sets of L/W/H columns
+            const lIndex2 = headers.lastIndexOf("L");
+            const wIndex2 = headers.lastIndexOf("W");
+            const hIndex2 = headers.lastIndexOf("H");
+            
+            const cbmIndex = headers.indexOf("Cbm");
+            const priceIndex = headers.indexOf("Price USD");
+            
+            // Use first L/W/H if available, otherwise use second set
+            const lValue = row[lIndex1] || row[lIndex2] || "";
+            const wValue = row[wIndex1] || row[wIndex2] || "";
+            const hValue = row[hIndex1] || row[hIndex2] || "";
+            
+            // Build dimensions string based on Size or individual L/W/H values
+            let dimensions = "";
+            if (sizeIndex !== -1 && row[sizeIndex]) {
+              dimensions = String(row[sizeIndex]);
+            } else if (lValue || wValue || hValue) {
+              dimensions = `${lValue}x${wValue}x${hValue}`;
+            }
+            
+            // Parse price safely
+            const parsePrice = (value: any): number => {
               if (value === undefined || value === null) return 0;
               const numStr = String(value).replace(/[^0-9.]/g, '');
               return numStr ? parseFloat(numStr) : 0;
             };
             
-            // Check multiple possible column names
-            const getFieldValue = (possibleNames: string[]): string => {
-              for (const name of possibleNames) {
-                if (row[name] !== undefined) return String(row[name]);
-              }
-              return "";
-            };
-            
-            const code = getFieldValue(["Item Code", "Code", "ITEM CODE", "code", "ItemCode"]);
-            const image = getFieldValue(["Photo", "Image", "PHOTO", "photo", "URL", "ImageURL"]);
-            
-            // Handle dimensions - either as a single field or components L, W, H
-            let dimensions = getFieldValue(["Dimensions", "DIMENSIONS", "dimensions", "Size", "SIZE"]);
-            if (!dimensions) {
-              const l = row["L"] || row["Length"] || "";
-              const w = row["W"] || row["Width"] || "";
-              const h = row["H"] || row["Height"] || "";
-              if (l || w || h) {
-                dimensions = `${l}x${w}x${h}`;
-              }
-            }
-            
-            // Try multiple price column names
-            const priceField = getFieldValue(["Price USD", "Price", "PRICE", "price", "PriceUSD"]);
-            const price = parseNumeric(priceField);
-            
-            const cbm = getFieldValue(["Cbm", "CBM", "cbm", "Volume", "VOLUME"]);
-            const description = getFieldValue(["Description", "DESCRIPTION", "description", "Desc"]);
-            const finish = getFieldValue(["Finish", "FINISH", "finish", "Material", "MATERIAL"]);
-            
+            // Build the product object
             return {
               id: index.toString(),
-              code,
-              image,
+              code: codeIndex !== -1 ? String(row[codeIndex] || "") : "",
+              image: photoIndex !== -1 ? String(row[photoIndex] || "") : "",
               dimensions,
-              price,
-              cbm,
-              description,
-              finish
+              price: priceIndex !== -1 ? parsePrice(row[priceIndex]) : 0,
+              cbm: cbmIndex !== -1 ? String(row[cbmIndex] || "") : "",
+              description: descIndex !== -1 ? String(row[descIndex] || "") : "",
+              finish: finishIndex !== -1 ? String(row[finishIndex] || "") : ""
             };
           });
           
