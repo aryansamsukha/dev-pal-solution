@@ -44,6 +44,7 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
     try {
       setIsLoading(true);
       const data = await readExcelFile(file);
+      console.log("Imported data:", data); // Debug to see what was imported
       onImport(data);
       toast({
         title: "Import successful",
@@ -68,38 +69,82 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
       reader.onload = (e) => {
         try {
           const data = e.target?.result;
-          const workbook = XLSX.read(data, { type: "binary" });
+          const workbook = XLSX.read(data, { type: "array" });
           const sheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
+          
+          // Convert to JSON with header: 1 option to get array of arrays first
+          // This helps us debug the actual structure of the Excel file
+          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          console.log("Raw Excel data:", rawData);
+          
+          // Now convert with headers
           const json = XLSX.utils.sheet_to_json(worksheet);
+          console.log("JSON data with headers:", json);
           
-          // Map Excel columns to our product structure based on your specific Excel format
-          const products: ProductType[] = json.map((row: any, index) => ({
-            id: index.toString(),
-            // Map "Item Code" from Excel to code in our app
-            code: row["Item Code"] || "",
-            // Map "Photo" from Excel to image in our app
-            image: row["Photo"] || "",
-            // Combine L, W, H from Excel into dimensions in our app
-            dimensions: `${row["L"] || ''}x${row["W"] || ''}x${row["H"] || ''}`,
-            // Map "Price USD" from Excel to price in our app
-            price: parseFloat((row["Price USD"] || "0").toString().replace(/[^0-9.]/g, '')) || 0,
-            // Map "Cbm" from Excel to cbm in our app
-            cbm: row["Cbm"] || "",
-            // Map "Description" from Excel to description in our app
-            description: row["Description"] || "",
-            // Map "Finish" from Excel to finish in our app
-            finish: row["Finish"] || "",
-          }));
+          // Map Excel columns to our product structure, checking multiple possible column names
+          const products: ProductType[] = json.map((row: any, index) => {
+            console.log("Processing row:", row);
+            
+            // Try to parse numeric values safely
+            const parseNumeric = (value: any): number => {
+              if (value === undefined || value === null) return 0;
+              const numStr = String(value).replace(/[^0-9.]/g, '');
+              return numStr ? parseFloat(numStr) : 0;
+            };
+            
+            // Check multiple possible column names
+            const getFieldValue = (possibleNames: string[]): string => {
+              for (const name of possibleNames) {
+                if (row[name] !== undefined) return String(row[name]);
+              }
+              return "";
+            };
+            
+            const code = getFieldValue(["Item Code", "Code", "ITEM CODE", "code", "ItemCode"]);
+            const image = getFieldValue(["Photo", "Image", "PHOTO", "photo", "URL", "ImageURL"]);
+            
+            // Handle dimensions - either as a single field or components L, W, H
+            let dimensions = getFieldValue(["Dimensions", "DIMENSIONS", "dimensions", "Size", "SIZE"]);
+            if (!dimensions) {
+              const l = row["L"] || row["Length"] || "";
+              const w = row["W"] || row["Width"] || "";
+              const h = row["H"] || row["Height"] || "";
+              if (l || w || h) {
+                dimensions = `${l}x${w}x${h}`;
+              }
+            }
+            
+            // Try multiple price column names
+            const priceField = getFieldValue(["Price USD", "Price", "PRICE", "price", "PriceUSD"]);
+            const price = parseNumeric(priceField);
+            
+            const cbm = getFieldValue(["Cbm", "CBM", "cbm", "Volume", "VOLUME"]);
+            const description = getFieldValue(["Description", "DESCRIPTION", "description", "Desc"]);
+            const finish = getFieldValue(["Finish", "FINISH", "finish", "Material", "MATERIAL"]);
+            
+            return {
+              id: index.toString(),
+              code,
+              image,
+              dimensions,
+              price,
+              cbm,
+              description,
+              finish
+            };
+          });
           
+          console.log("Mapped products:", products);
           resolve(products);
         } catch (error) {
+          console.error("Error parsing Excel:", error);
           reject(error);
         }
       };
       
       reader.onerror = (error) => reject(error);
-      reader.readAsBinaryString(file);
+      reader.readAsArrayBuffer(file);
     });
   };
 
