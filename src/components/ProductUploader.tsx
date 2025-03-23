@@ -73,15 +73,23 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
           const worksheet = workbook.Sheets[sheetName];
           const json = XLSX.utils.sheet_to_json(worksheet);
           
-          // Map Excel columns to our product structure
+          // Map Excel columns to our product structure based on your specific Excel format
           const products: ProductType[] = json.map((row: any, index) => ({
             id: index.toString(),
-            code: row.code || row.Code || row.CODE || row.product_code || row["Product Code"] || "",
-            image: row.image || row.Image || row.IMAGE || row.image_url || row["Image URL"] || "",
-            dimensions: row.dimensions || row.Dimensions || row.DIMENSIONS || row.size || row.Size || "",
-            price: parseFloat(row.price || row.Price || row.PRICE || 0),
-            cbm: row.cbm || row.CBM || row.volume || row.Volume || "",
-            description: row.description || row.Description || row.DESCRIPTION || "",
+            // Map "Item Code" from Excel to code in our app
+            code: row["Item Code"] || "",
+            // Map "Photo" from Excel to image in our app
+            image: row["Photo"] || "",
+            // Combine L, W, H from Excel into dimensions in our app
+            dimensions: `${row["L"] || ''}x${row["W"] || ''}x${row["H"] || ''}`,
+            // Map "Price USD" from Excel to price in our app
+            price: parseFloat((row["Price USD"] || "0").toString().replace(/[^0-9.]/g, '')) || 0,
+            // Map "Cbm" from Excel to cbm in our app
+            cbm: row["Cbm"] || "",
+            // Map "Description" from Excel to description in our app
+            description: row["Description"] || "",
+            // Map "Finish" from Excel to finish in our app
+            finish: row["Finish"] || "",
           }));
           
           resolve(products);

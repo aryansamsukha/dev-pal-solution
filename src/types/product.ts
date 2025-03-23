@@ -7,4 +7,5 @@ export interface ProductType {
   price: number;
   cbm: string;
   description: string;
+  finish?: string;
 }

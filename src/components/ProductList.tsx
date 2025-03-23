@@ -48,6 +48,7 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
             <TableHead>Image</TableHead>
             <TableHead>Code</TableHead>
             <TableHead>Dimensions</TableHead>
+            <TableHead>Finish</TableHead>
             <TableHead>Price</TableHead>
             <TableHead>CBM</TableHead>
             <TableHead>Description</TableHead>
@@ -101,7 +102,8 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
               </TableCell>
               <TableCell className="font-medium">{product.code}</TableCell>
               <TableCell>{product.dimensions}</TableCell>
-              <TableCell>{typeof product.price === 'number' ? `₹${product.price.toLocaleString()}` : product.price}</TableCell>
+              <TableCell>{product.finish}</TableCell>
+              <TableCell>{typeof product.price === 'number' ? `$${product.price.toLocaleString()}` : product.price}</TableCell>
               <TableCell>{product.cbm}</TableCell>
               <TableCell className="max-w-xs truncate" title={product.description}>
                 {product.description}

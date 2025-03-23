@@ -24,7 +24,8 @@ const Index = () => {
     
     const filtered = products.filter((product) => 
       product.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.description.toLowerCase().includes(searchTerm.toLowerCase())
+      product.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (product.finish && product.finish.toLowerCase().includes(searchTerm.toLowerCase()))
     );
     setFilteredProducts(filtered);
   };
