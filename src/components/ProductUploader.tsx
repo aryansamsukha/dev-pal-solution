@@ -74,21 +74,21 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
           const worksheet = workbook.Sheets[sheetName];
           
           // First, get raw data as arrays to inspect structure
-          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          const rawData = XLSX.utils.sheet_to_json<string[]>(worksheet, { header: 1 });
           console.log("Raw Excel data:", rawData);
           
-          // Find the header row (the one with "Item Code", "Photo", etc.)
+          // Find the header row (the one with "S.No.", "Item Code", etc.)
           let headerRowIndex = -1;
           for (let i = 0; i < rawData.length; i++) {
             const row = rawData[i];
-            if (Array.isArray(row) && row.includes("Item Code")) {
+            if (Array.isArray(row) && row.includes("S.No.") && row.includes("Item Code")) {
               headerRowIndex = i;
               break;
             }
           }
           
           if (headerRowIndex === -1) {
-            throw new Error("Could not find header row with 'Item Code' column");
+            throw new Error("Could not find header row with 'S.No.' and 'Item Code' columns");
           }
           
           console.log("Header row found at index:", headerRowIndex);
@@ -109,6 +109,10 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
           
           // Map data rows to products
           const products: ProductType[] = nonEmptyRows.map((row, index) => {
+            if (!Array.isArray(headers)) {
+              throw new Error("Headers are not in expected format");
+            }
+            
             // Use column indices from header row to get proper values
             const sNoIndex = headers.indexOf("S.No.");
             const photoIndex = headers.indexOf("Photo");
@@ -116,48 +120,43 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
             const descIndex = headers.indexOf("Description");
             const finishIndex = headers.indexOf("Finish");
             const sizeIndex = headers.indexOf("Size");
-            const lIndex1 = headers.indexOf("L");
-            const wIndex1 = headers.indexOf("W");
-            const hIndex1 = headers.indexOf("H");
             
-            // Some files have two sets of L/W/H columns
-            const lIndex2 = headers.lastIndexOf("L");
-            const wIndex2 = headers.lastIndexOf("W");
-            const hIndex2 = headers.lastIndexOf("H");
+            // Find L, W, H columns which may be under Size
+            const lIndex = headers.indexOf("L");
+            const wIndex = headers.indexOf("W");
+            const hIndex = headers.indexOf("H");
             
             const cbmIndex = headers.indexOf("Cbm");
             const priceIndex = headers.indexOf("Price USD");
             
-            // Use first L/W/H if available, otherwise use second set
-            const lValue = row[lIndex1] || row[lIndex2] || "";
-            const wValue = row[wIndex1] || row[wIndex2] || "";
-            const hValue = row[hIndex1] || row[hIndex2] || "";
-            
-            // Build dimensions string based on Size or individual L/W/H values
+            // Create dimensions string from L, W, H values if available
             let dimensions = "";
-            if (sizeIndex !== -1 && row[sizeIndex]) {
-              dimensions = String(row[sizeIndex]);
-            } else if (lValue || wValue || hValue) {
-              dimensions = `${lValue}x${wValue}x${hValue}`;
+            if (lIndex !== -1 && wIndex !== -1 && hIndex !== -1 && 
+                row[lIndex] && row[wIndex] && row[hIndex]) {
+              dimensions = `${row[lIndex]}x${row[wIndex]}x${row[hIndex]}`;
             }
             
             // Parse price safely
             const parsePrice = (value: any): number => {
               if (value === undefined || value === null) return 0;
-              const numStr = String(value).replace(/[^0-9.]/g, '');
-              return numStr ? parseFloat(numStr) : 0;
+              if (typeof value === 'string') {
+                // Remove currency symbols and commas
+                const numStr = value.replace(/[$,]/g, '');
+                return numStr ? parseFloat(numStr) : 0;
+              }
+              return typeof value === 'number' ? value : 0;
             };
             
             // Build the product object
             return {
-              id: index.toString(),
-              code: codeIndex !== -1 ? String(row[codeIndex] || "") : "",
-              image: photoIndex !== -1 ? String(row[photoIndex] || "") : "",
-              dimensions,
+              id: String(index), // Use index as fallback id
+              code: codeIndex !== -1 && row[codeIndex] ? String(row[codeIndex]) : "",
+              image: photoIndex !== -1 && row[photoIndex] ? String(row[photoIndex]) : "",
+              dimensions: dimensions || "",
               price: priceIndex !== -1 ? parsePrice(row[priceIndex]) : 0,
-              cbm: cbmIndex !== -1 ? String(row[cbmIndex] || "") : "",
-              description: descIndex !== -1 ? String(row[descIndex] || "") : "",
-              finish: finishIndex !== -1 ? String(row[finishIndex] || "") : ""
+              cbm: cbmIndex !== -1 && row[cbmIndex] ? String(row[cbmIndex]) : "",
+              description: descIndex !== -1 && row[descIndex] ? String(row[descIndex]) : "",
+              finish: finishIndex !== -1 && row[finishIndex] ? String(row[finishIndex]) : ""
             };
           });
           
