@@ -1,15 +1,50 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import ProductUploader from "@/components/ProductUploader";
 import ProductSearch from "@/components/ProductSearch";
 import ProductList from "@/components/ProductList";
 import { ProductType } from "@/types/product";
+import { supabase } from "@/integrations/supabase/client";
 
 const Index = () => {
   const [products, setProducts] = useState<ProductType[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<ProductType[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      setIsLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .select('*')
+          .order('code', { ascending: true });
+          
+        if (error) throw error;
+        
+        const formattedProducts = data.map(product => ({
+          id: product.id,
+          code: product.code,
+          description: product.description || "",
+          finish: product.finish || "",
+          dimensions: product.dimensions || "",
+          price: product.price || 0,
+          cbm: product.cbm || "",
+          image: product.image_url || "",
+        }));
+        
+        setProducts(formattedProducts);
+        setFilteredProducts(formattedProducts);
+      } catch (error) {
+        console.error("Error fetching products:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchProducts();
+  }, []);
 
   const handleProductsImport = (importedProducts: ProductType[]) => {
     setProducts(importedProducts);

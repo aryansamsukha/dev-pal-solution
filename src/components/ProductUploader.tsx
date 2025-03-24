@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Upload, FileUp } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { ProductType } from "@/types/product";
+import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from "xlsx";
 
 interface ProductUploaderProps {
@@ -45,6 +46,10 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
       setIsLoading(true);
       const data = await readExcelFile(file);
       console.log("Imported data:", data); // Debug to see what was imported
+      
+      // Save to Supabase
+      await saveProductsToSupabase(data);
+      
       onImport(data);
       toast({
         title: "Import successful",
@@ -54,11 +59,35 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
       console.error("Error importing file:", error);
       toast({
         title: "Import failed",
-        description: "There was an error importing your products",
+        description: typeof error === 'object' && error !== null && 'message' in error 
+          ? String(error.message) 
+          : "An error occurred while importing your products",
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const saveProductsToSupabase = async (products: ProductType[]) => {
+    const { error } = await supabase
+      .from('products')
+      .upsert(
+        products.map(product => ({
+          code: product.code,
+          description: product.description,
+          finish: product.finish,
+          dimensions: product.dimensions,
+          price: product.price,
+          cbm: product.cbm,
+          image_url: product.image
+        })),
+        { onConflict: 'code' }
+      );
+
+    if (error) {
+      console.error('Error saving products to Supabase:', error);
+      throw new Error(`Failed to save products: ${error.message}`);
     }
   };
 
@@ -81,14 +110,15 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
           let headerRowIndex = -1;
           for (let i = 0; i < rawData.length; i++) {
             const row = rawData[i];
-            if (Array.isArray(row) && row.includes("S.No.") && row.includes("Item Code")) {
+            if (Array.isArray(row) && row.some(cell => 
+              typeof cell === 'string' && cell.includes("Item Code"))) {
               headerRowIndex = i;
               break;
             }
           }
           
           if (headerRowIndex === -1) {
-            throw new Error("Could not find header row with 'S.No.' and 'Item Code' columns");
+            throw new Error("Could not find header row with 'Item Code' column");
           }
           
           console.log("Header row found at index:", headerRowIndex);
@@ -113,27 +143,25 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
               throw new Error("Headers are not in expected format");
             }
             
-            // Use column indices from header row to get proper values
-            const sNoIndex = headers.indexOf("S.No.");
-            const photoIndex = headers.indexOf("Photo");
-            const codeIndex = headers.indexOf("Item Code");
-            const descIndex = headers.indexOf("Description");
-            const finishIndex = headers.indexOf("Finish");
-            const sizeIndex = headers.indexOf("Size");
-            
-            // Find L, W, H columns which may be under Size
-            const lIndex = headers.indexOf("L");
-            const wIndex = headers.indexOf("W");
-            const hIndex = headers.indexOf("H");
-            
-            const cbmIndex = headers.indexOf("Cbm");
-            const priceIndex = headers.indexOf("Price USD");
+            // Find column indices
+            const codeIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Item Code"));
+            const descIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Description"));
+            const finishIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Finish"));
+            const lIndex = headers.findIndex(h => typeof h === 'string' && h === "L");
+            const wIndex = headers.findIndex(h => typeof h === 'string' && h === "W");
+            const hIndex = headers.findIndex(h => typeof h === 'string' && h === "H");
+            const cbmIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Cbm"));
+            const priceIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Price"));
             
             // Create dimensions string from L, W, H values if available
             let dimensions = "";
-            if (lIndex !== -1 && wIndex !== -1 && hIndex !== -1 && 
-                row[lIndex] && row[wIndex] && row[hIndex]) {
-              dimensions = `${row[lIndex]}x${row[wIndex]}x${row[hIndex]}`;
+            if (lIndex !== -1 && wIndex !== -1 && hIndex !== -1) {
+              const l = row[lIndex];
+              const w = row[wIndex];
+              const h = row[hIndex];
+              if (l && w && h) {
+                dimensions = `${l}x${w}x${h}`;
+              }
             }
             
             // Parse price safely
@@ -147,18 +175,25 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
               return typeof value === 'number' ? value : 0;
             };
             
+            const code = codeIndex !== -1 && row[codeIndex] ? String(row[codeIndex]).trim() : "";
+            
+            if (!code) {
+              console.warn(`Skipping row ${index + headerRowIndex + 1} due to missing product code`);
+              return null;
+            }
+            
             // Build the product object
             return {
               id: String(index), // Use index as fallback id
-              code: codeIndex !== -1 && row[codeIndex] ? String(row[codeIndex]) : "",
-              image: photoIndex !== -1 && row[photoIndex] ? String(row[photoIndex]) : "",
+              code,
+              image: "", // Will be populated through the image uploader
               dimensions: dimensions || "",
               price: priceIndex !== -1 ? parsePrice(row[priceIndex]) : 0,
               cbm: cbmIndex !== -1 && row[cbmIndex] ? String(row[cbmIndex]) : "",
               description: descIndex !== -1 && row[descIndex] ? String(row[descIndex]) : "",
               finish: finishIndex !== -1 && row[finishIndex] ? String(row[finishIndex]) : ""
             };
-          });
+          }).filter((product): product is ProductType => product !== null);
           
           console.log("Mapped products:", products);
           resolve(products);

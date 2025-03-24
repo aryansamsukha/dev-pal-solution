@@ -1,4 +1,5 @@
 
+import { useState } from "react";
 import {
   Table,
   TableBody,
@@ -12,6 +13,7 @@ import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Search, Image as ImageIcon } from "lucide-react";
+import ProductDetail from "@/components/ProductDetail";
 
 interface ProductListProps {
   products: ProductType[];
@@ -19,6 +21,23 @@ interface ProductListProps {
 }
 
 const ProductList = ({ products, isLoading }: ProductListProps) => {
+  const [localProducts, setLocalProducts] = useState<ProductType[]>(products);
+  
+  // Update local products when props change
+  if (JSON.stringify(products) !== JSON.stringify(localProducts)) {
+    setLocalProducts(products);
+  }
+
+  const handleImageUpdated = (productId: string, imageUrl: string) => {
+    setLocalProducts(prevProducts => 
+      prevProducts.map(product => 
+        product.id === productId 
+          ? { ...product, image: imageUrl } 
+          : product
+      )
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-10">
@@ -28,7 +47,7 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
     );
   }
 
-  if (products.length === 0) {
+  if (localProducts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-10">
         <Search className="h-12 w-12 text-muted-foreground" />
@@ -52,10 +71,11 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
             <TableHead>Price</TableHead>
             <TableHead>CBM</TableHead>
             <TableHead>Description</TableHead>
+            <TableHead>Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {products.map((product) => (
+          {localProducts.map((product) => (
             <TableRow key={product.id}>
               <TableCell>
                 {product.image ? (
@@ -76,22 +96,14 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
                         </div>
                       </Button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-2xl">
+                    <DialogContent className="max-w-4xl">
                       <DialogHeader>
                         <DialogTitle>Product {product.code}</DialogTitle>
                       </DialogHeader>
-                      <div className="overflow-hidden rounded-md border bg-muted">
-                        <AspectRatio ratio={4/3}>
-                          <img
-                            src={product.image}
-                            alt={product.code}
-                            className="h-full w-full object-contain"
-                            onError={(e) => {
-                              e.currentTarget.src = "/placeholder.svg";
-                            }}
-                          />
-                        </AspectRatio>
-                      </div>
+                      <ProductDetail 
+                        product={product} 
+                        onImageUpdated={handleImageUpdated}
+                      />
                     </DialogContent>
                   </Dialog>
                 ) : (
@@ -107,6 +119,24 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
               <TableCell>{product.cbm}</TableCell>
               <TableCell className="max-w-xs truncate" title={product.description}>
                 {product.description}
+              </TableCell>
+              <TableCell>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      Details & QR
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-4xl">
+                    <DialogHeader>
+                      <DialogTitle>Product {product.code}</DialogTitle>
+                    </DialogHeader>
+                    <ProductDetail 
+                      product={product} 
+                      onImageUpdated={handleImageUpdated}
+                    />
+                  </DialogContent>
+                </Dialog>
               </TableCell>
             </TableRow>
           ))}
