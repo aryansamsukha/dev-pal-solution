@@ -43,11 +43,28 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
     if (!dimensions) return "";
     
     // If already in the format L x W x H, return as is
-    if (dimensions.includes("x")) return dimensions;
+    if (dimensions.includes("x") || dimensions.includes("X")) {
+      // Ensure consistent formatting with lowercase 'x' and proper spacing
+      return dimensions.replace(/[xX]/g, " x ").replace(/\s+/g, " ").trim();
+    }
     
-    // Try to parse dimensions if in another format
-    // For now, just return the original
-    return dimensions;
+    // Try to parse dimensions based on common patterns
+    const possibleSeparators = [" ", ",", "-", "/"];
+    for (const separator of possibleSeparators) {
+      if (dimensions.includes(separator)) {
+        const parts = dimensions.split(separator).filter(p => p.trim() !== "").map(p => p.trim());
+        if (parts.length === 3) {
+          return `${parts[0]} x ${parts[1]} x ${parts[2]}`;
+        }
+      }
+    }
+    
+    // If we couldn't parse it but it seems to have numbers, just return the original
+    if (/\d/.test(dimensions)) {
+      return dimensions;
+    }
+    
+    return "";
   };
 
   if (isLoading) {
@@ -125,7 +142,7 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
                 )}
               </TableCell>
               <TableCell className="font-medium">{product.code}</TableCell>
-              <TableCell>{formatDimensions(product.dimensions)}</TableCell>
+              <TableCell className="whitespace-nowrap">{formatDimensions(product.dimensions)}</TableCell>
               <TableCell>{product.finish}</TableCell>
               <TableCell>{typeof product.price === 'number' ? `$${product.price.toLocaleString()}` : product.price}</TableCell>
               <TableCell>{product.cbm}</TableCell>

@@ -2,11 +2,12 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Upload, FileUp } from "lucide-react";
+import { Upload, FileUp, ImageDown } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { ProductType } from "@/types/product";
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from "xlsx";
+import JSZip from "jszip";
 
 interface ProductUploaderProps {
   onImport: (products: ProductType[]) => void;
@@ -16,10 +17,18 @@ interface ProductUploaderProps {
 const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
   const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null);
+  const [imagesZip, setImagesZip] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setFile(e.target.files[0]);
+    }
+  };
+
+  const handleImageZipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setImagesZip(e.target.files[0]);
     }
   };
 
@@ -43,9 +52,15 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
     }
 
     try {
+      setUploading(true);
       setIsLoading(true);
       const data = await readExcelFile(file);
       console.log("Imported data:", data); // Debug to see what was imported
+      
+      // Upload images from zip if provided
+      if (imagesZip) {
+        await processImageZip(imagesZip, data);
+      }
       
       // Save to Supabase
       await saveProductsToSupabase(data);
@@ -65,29 +80,132 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
         variant: "destructive",
       });
     } finally {
+      setUploading(false);
       setIsLoading(false);
     }
   };
 
-  const saveProductsToSupabase = async (products: ProductType[]) => {
-    const { error } = await supabase
-      .from('products')
-      .upsert(
-        products.map(product => ({
-          code: product.code,
-          description: product.description,
-          finish: product.finish,
-          dimensions: product.dimensions,
-          price: product.price,
-          cbm: product.cbm,
-          image_url: product.image
-        })),
-        { onConflict: 'code' }
-      );
+  const processImageZip = async (zipFile: File, products: ProductType[]) => {
+    try {
+      const zip = new JSZip();
+      const zipContents = await zip.loadAsync(zipFile);
+      const productCodeMap = new Map(products.map(p => [p.code.toLowerCase(), p]));
+      
+      toast({
+        title: "Processing images",
+        description: "Starting to extract and upload images from ZIP file"
+      });
+      
+      let uploadedCount = 0;
+      const productCodes = Array.from(productCodeMap.keys());
+      
+      // Process files in the zip
+      const promises: Promise<void>[] = [];
+      
+      zipContents.forEach(async (relativePath, zipEntry) => {
+        if (zipEntry.dir) return;
+        
+        const fileName = relativePath.split('/').pop() || '';
+        if (!fileName.match(/\.(jpg|jpeg|png|gif|webp)$/i)) return;
+        
+        // Try to match the filename to a product code
+        const codeMatch = productCodes.find(code => 
+          fileName.toLowerCase().includes(code) ||
+          code.toLowerCase().includes(fileName.replace(/\.(jpg|jpeg|png|gif|webp)$/i, '').toLowerCase())
+        );
+        
+        if (codeMatch) {
+          const product = productCodeMap.get(codeMatch);
+          if (product) {
+            const promise = zipEntry.async('blob').then(async (blob) => {
+              // Create a file from the blob
+              const file = new File([blob], `${product.code}.${fileName.split('.').pop()}`, { type: `image/${fileName.split('.').pop()}` });
+              
+              // Upload the file
+              const filePath = `${product.code}.${fileName.split('.').pop()}`;
+              
+              try {
+                const { data, error } = await supabase.storage
+                  .from('product-images')
+                  .upload(filePath, file, { 
+                    upsert: true,
+                    contentType: file.type 
+                  });
+                
+                if (error) throw error;
+                
+                // Get public URL and update product
+                const { data: { publicUrl } } = supabase.storage
+                  .from('product-images')
+                  .getPublicUrl(filePath);
+                
+                // Update the product
+                product.image = publicUrl;
+                
+                // Update in Supabase
+                await supabase
+                  .from('products')
+                  .update({ image_url: publicUrl })
+                  .eq('code', product.code);
+                
+                uploadedCount++;
+              } catch (error) {
+                console.error(`Error uploading image for ${product.code}:`, error);
+              }
+            });
+            
+            promises.push(promise);
+          }
+        }
+      });
+      
+      await Promise.all(promises);
+      
+      toast({
+        title: "Images processed",
+        description: `${uploadedCount} images uploaded and linked to products.`
+      });
+    } catch (error) {
+      console.error("Error processing zip file:", error);
+      toast({
+        title: "Image processing failed",
+        description: typeof error === 'object' && error !== null && 'message' in error 
+          ? String(error.message) 
+          : "An error occurred while processing images",
+        variant: "destructive",
+      });
+    }
+  };
 
-    if (error) {
-      console.error('Error saving products to Supabase:', error);
-      throw new Error(`Failed to save products: ${error.message}`);
+  const saveProductsToSupabase = async (products: ProductType[]) => {
+    // Process products in batches to avoid Supabase error
+    const batchSize = 20;
+    const batches = [];
+    
+    for (let i = 0; i < products.length; i += batchSize) {
+      batches.push(products.slice(i, i + batchSize));
+    }
+    
+    for (const batch of batches) {
+      const { error } = await supabase
+        .from('products')
+        .upsert(
+          batch.map(product => ({
+            code: product.code,
+            description: product.description,
+            finish: product.finish,
+            dimensions: product.dimensions,
+            price: product.price,
+            cbm: product.cbm,
+            image_url: product.image
+          })),
+          { onConflict: 'code' }
+        );
+
+      if (error) {
+        console.error('Error saving products to Supabase:', error);
+        throw new Error(`Failed to save products: ${error.message}`);
+      }
     }
   };
 
@@ -111,14 +229,19 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
           for (let i = 0; i < rawData.length; i++) {
             const row = rawData[i];
             if (Array.isArray(row) && row.some(cell => 
-              typeof cell === 'string' && cell.includes("Item Code"))) {
+              typeof cell === 'string' && (
+                cell.includes("Item Code") || 
+                cell.includes("Code") ||
+                cell.includes("Product Code")
+              )
+            )) {
               headerRowIndex = i;
               break;
             }
           }
           
           if (headerRowIndex === -1) {
-            throw new Error("Could not find header row with 'Item Code' column");
+            throw new Error("Could not find header row with 'Item Code' or 'Code' column");
           }
           
           console.log("Header row found at index:", headerRowIndex);
@@ -144,18 +267,49 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
             }
             
             // Find column indices
-            const codeIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Item Code"));
+            const codeIndex = headers.findIndex(h => typeof h === 'string' && (
+              h.includes("Item Code") || h.includes("Code") || h.includes("Product Code")
+            ));
             const descIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Description"));
             const finishIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Finish"));
-            const lIndex = headers.findIndex(h => typeof h === 'string' && (h === "L" || h.toLowerCase().includes("length")));
-            const wIndex = headers.findIndex(h => typeof h === 'string' && (h === "W" || h.toLowerCase().includes("width")));
-            const hIndex = headers.findIndex(h => typeof h === 'string' && (h === "H" || h.toLowerCase().includes("height")));
-            const cbmIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Cbm"));
-            const priceIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Price"));
             
-            // Create dimensions string from L, W, H values if available
+            // Look for dimension columns - either combined or separate L, W, H
+            const dimensionsIndex = headers.findIndex(h => typeof h === 'string' && (
+              h.includes("Dimensions") || h.includes("Size")
+            ));
+            const lIndex = headers.findIndex(h => typeof h === 'string' && (
+              h === "L" || h.toLowerCase().includes("length")
+            ));
+            const wIndex = headers.findIndex(h => typeof h === 'string' && (
+              h === "W" || h.toLowerCase().includes("width")
+            ));
+            const hIndex = headers.findIndex(h => typeof h === 'string' && (
+              h === "H" || h.toLowerCase().includes("height")
+            ));
+            
+            const cbmIndex = headers.findIndex(h => typeof h === 'string' && (
+              h.includes("Cbm") || h.includes("CBM") || h.includes("Volume")
+            ));
+            const priceIndex = headers.findIndex(h => typeof h === 'string' && (
+              h.includes("Price") || h.includes("Cost")
+            ));
+            
+            // Create dimensions string from combined dimension field or L, W, H values if available
             let dimensions = "";
-            if (lIndex !== -1 && wIndex !== -1 && hIndex !== -1) {
+            if (dimensionsIndex !== -1 && row[dimensionsIndex]) {
+              // If we have a combined dimensions field
+              dimensions = String(row[dimensionsIndex]);
+              
+              // If the dimensions don't already contain 'x', format it
+              if (!dimensions.includes("x") && !dimensions.includes("X")) {
+                // Try to parse it based on common formats
+                const dims = dimensions.split(/[x×*]/);
+                if (dims.length === 3) {
+                  dimensions = `${dims[0].trim()} x ${dims[1].trim()} x ${dims[2].trim()}`;
+                }
+              }
+            } else if (lIndex !== -1 && wIndex !== -1 && hIndex !== -1) {
+              // If we have separate L, W, H columns
               const l = row[lIndex];
               const w = row[wIndex];
               const h = row[hIndex];
@@ -220,21 +374,49 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
           onChange={handleFileChange}
           className="cursor-pointer"
         />
+        <p className="text-xs text-muted-foreground">Upload Excel file with product details</p>
+      </div>
+      
+      <div className="grid w-full max-w-sm items-center gap-1.5">
+        <Input
+          id="images-zip"
+          type="file"
+          accept=".zip"
+          onChange={handleImageZipChange}
+          className="cursor-pointer"
+        />
+        <p className="text-xs text-muted-foreground">Optional: Upload ZIP file with product images (filenames should match product codes)</p>
       </div>
       
       <Button 
         onClick={handleUpload} 
         className="w-full"
-        disabled={!file}
+        disabled={!file || uploading}
       >
-        <Upload className="mr-2 h-4 w-4" />
-        Import Products
+        {uploading ? (
+          <>
+            <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent"></div>
+            Importing...
+          </>
+        ) : (
+          <>
+            <Upload className="mr-2 h-4 w-4" />
+            Import Products
+          </>
+        )}
       </Button>
       
       {file && (
         <div className="text-sm flex items-center gap-2 text-muted-foreground">
           <FileUp className="h-4 w-4" />
           <span className="truncate">{file.name}</span>
+        </div>
+      )}
+      
+      {imagesZip && (
+        <div className="text-sm flex items-center gap-2 text-muted-foreground">
+          <ImageDown className="h-4 w-4" />
+          <span className="truncate">{imagesZip.name}</span>
         </div>
       )}
     </div>

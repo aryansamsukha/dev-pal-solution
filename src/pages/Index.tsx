@@ -6,6 +6,8 @@ import ProductSearch from "@/components/ProductSearch";
 import ProductList from "@/components/ProductList";
 import { ProductType } from "@/types/product";
 import { supabase } from "@/integrations/supabase/client";
+import { ensureStorageBuckets } from "@/integrations/supabase/ensureBuckets";
+import { toast } from "@/components/ui/use-toast";
 
 const Index = () => {
   const [products, setProducts] = useState<ProductType[]>([]);
@@ -13,42 +15,82 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      setIsLoading(true);
+    const initApp = async () => {
+      // Make sure we have the necessary storage buckets
       try {
+        await ensureStorageBuckets();
+      } catch (error) {
+        console.error("Error ensuring storage buckets:", error);
+      }
+      
+      fetchProducts();
+    };
+    
+    initApp();
+  }, []);
+  
+  const fetchProducts = async () => {
+    setIsLoading(true);
+    try {
+      // Get all products with pagination to handle large datasets
+      const allProducts: ProductType[] = [];
+      let page = 0;
+      const pageSize = 100;
+      let hasMore = true;
+      
+      while (hasMore) {
         const { data, error } = await supabase
           .from('products')
           .select('*')
+          .range(page * pageSize, (page + 1) * pageSize - 1)
           .order('code', { ascending: true });
           
         if (error) throw error;
         
-        const formattedProducts = data.map(product => ({
-          id: product.id,
-          code: product.code,
-          description: product.description || "",
-          finish: product.finish || "",
-          dimensions: product.dimensions || "",
-          price: product.price || 0,
-          cbm: product.cbm || "",
-          image: product.image_url || "",
-        }));
-        
-        setProducts(formattedProducts);
-        setFilteredProducts(formattedProducts);
-      } catch (error) {
-        console.error("Error fetching products:", error);
-      } finally {
-        setIsLoading(false);
+        if (data.length === 0) {
+          hasMore = false;
+        } else {
+          const formattedProducts = data.map(product => ({
+            id: product.id || "",
+            code: product.code || "",
+            description: product.description || "",
+            finish: product.finish || "",
+            dimensions: product.dimensions || "",
+            price: product.price || 0,
+            cbm: product.cbm || "",
+            image: product.image_url || "",
+          }));
+          
+          allProducts.push(...formattedProducts);
+          page++;
+        }
       }
-    };
-    
-    fetchProducts();
-  }, []);
+      
+      setProducts(allProducts);
+      setFilteredProducts(allProducts);
+      
+      // Show feedback about the number of products
+      if (allProducts.length > 0) {
+        toast({
+          title: "Products loaded",
+          description: `${allProducts.length} products loaded successfully.`
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching products:", error);
+      toast({
+        title: "Error loading products",
+        description: "There was a problem loading your products.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleProductsImport = (importedProducts: ProductType[]) => {
-    setProducts(importedProducts);
-    setFilteredProducts(importedProducts);
+    // Refresh all products from the database after import
+    fetchProducts();
   };
 
   const handleSearch = (searchTerm: string) => {
