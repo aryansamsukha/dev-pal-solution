@@ -138,7 +138,7 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
           console.log("Data rows:", nonEmptyRows);
           
           // Map data rows to products
-          const products: ProductType[] = nonEmptyRows.map((row, index) => {
+          const products = nonEmptyRows.map((row, index) => {
             if (!Array.isArray(headers)) {
               throw new Error("Headers are not in expected format");
             }
