@@ -19,6 +19,7 @@ import { generateQRCodeURL } from "@/utils/qrCode";
 import { useToast } from "@/components/ui/use-toast";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ProductListProps {
   products: ProductType[];
@@ -188,18 +189,18 @@ const ProductList = ({ products, isLoading, onProductDeleted }: ProductListProps
         </Button>
       </div>
       
-      <div className="overflow-x-auto">
-        <Table className="min-w-full">
-          <TableHeader>
+      <div className="border rounded-lg">
+        <Table>
+          <TableHeader className="bg-muted/50">
             <TableRow>
-              <TableHead>Image</TableHead>
-              <TableHead>Code</TableHead>
-              <TableHead>Dimensions (L x W x H)</TableHead>
-              <TableHead>Finish</TableHead>
-              <TableHead>Price</TableHead>
-              <TableHead>CBM</TableHead>
+              <TableHead className="w-[80px]">Image</TableHead>
+              <TableHead className="w-[120px]">Code</TableHead>
+              <TableHead className="w-[180px]">Dimensions (L x W x H)</TableHead>
+              <TableHead className="w-[120px]">Finish</TableHead>
+              <TableHead className="w-[100px]">Price</TableHead>
+              <TableHead className="w-[80px]">CBM</TableHead>
               <TableHead>Description</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead className="w-[120px] text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -242,18 +243,18 @@ const ProductList = ({ products, isLoading, onProductDeleted }: ProductListProps
                   )}
                 </TableCell>
                 <TableCell className="font-medium">{product.code}</TableCell>
-                <TableCell className="whitespace-nowrap">{formatDimensions(product.dimensions)}</TableCell>
+                <TableCell>{formatDimensions(product.dimensions)}</TableCell>
                 <TableCell>{product.finish || "N/A"}</TableCell>
                 <TableCell>{typeof product.price === 'number' ? `$${product.price.toLocaleString()}` : "N/A"}</TableCell>
                 <TableCell>{product.cbm || "N/A"}</TableCell>
                 <TableCell className="max-w-xs truncate" title={product.description}>
                   {product.description || "N/A"}
                 </TableCell>
-                <TableCell>
+                <TableCell className="text-right">
                   <Dialog>
                     <DialogTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        Details & QR
+                      <Button variant="outline" size="sm" className="mr-2">
+                        Details
                       </Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-4xl">

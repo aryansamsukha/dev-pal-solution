@@ -47,14 +47,24 @@ const ProductDetail = ({ product, onImageUpdated, onProductDeleted }: ProductDet
       const { error } = await supabase
         .from('products')
         .update({ image_url: imageUrl })
-        .eq('code', product.code);
+        .eq('id', product.id);
 
       if (error) throw error;
       
       // Update local state via the callback
       onImageUpdated(product.id, imageUrl);
+      
+      toast({
+        title: "Image updated",
+        description: "Product image has been updated successfully"
+      });
     } catch (error) {
       console.error("Error updating product image:", error);
+      toast({
+        title: "Error updating image",
+        description: "There was an error updating the product image",
+        variant: "destructive"
+      });
     }
   };
 
@@ -77,7 +87,7 @@ const ProductDetail = ({ product, onImageUpdated, onProductDeleted }: ProductDet
       const { error } = await supabase
         .from('products')
         .delete()
-        .eq('code', product.code);
+        .eq('id', product.id);
         
       if (error) throw error;
       
@@ -118,7 +128,7 @@ const ProductDetail = ({ product, onImageUpdated, onProductDeleted }: ProductDet
     }
   };
 
-  // Format dimensions to ensure it's displayed in L x W x H format
+  // Format dimensions to ensure it's displayed properly
   const formatDimensions = (dimensions: string) => {
     if (!dimensions) return "N/A";
     
@@ -178,6 +188,7 @@ const ProductDetail = ({ product, onImageUpdated, onProductDeleted }: ProductDet
               <div className="mt-3">
                 <ProductImageUploader 
                   productCode={product.code} 
+                  productId={product.id}
                   onImageUploaded={handleImageUploaded}
                 />
               </div>
@@ -188,25 +199,25 @@ const ProductDetail = ({ product, onImageUpdated, onProductDeleted }: ProductDet
             <div>
               <h3 className="font-medium mb-1">Product Details</h3>
               <dl className="grid grid-cols-1 gap-2 text-sm">
-                <div className="grid grid-cols-3 gap-1">
+                <div className="grid grid-cols-[120px_1fr] gap-1">
                   <dt className="font-medium text-muted-foreground">Description:</dt>
-                  <dd className="col-span-2">{product.description || "N/A"}</dd>
+                  <dd>{product.description || "N/A"}</dd>
                 </div>
-                <div className="grid grid-cols-3 gap-1">
-                  <dt className="font-medium text-muted-foreground">Dimensions (L x W x H):</dt>
-                  <dd className="col-span-2">{formatDimensions(product.dimensions)}</dd>
+                <div className="grid grid-cols-[120px_1fr] gap-1">
+                  <dt className="font-medium text-muted-foreground">Dimensions:</dt>
+                  <dd>{formatDimensions(product.dimensions)}</dd>
                 </div>
-                <div className="grid grid-cols-3 gap-1">
+                <div className="grid grid-cols-[120px_1fr] gap-1">
                   <dt className="font-medium text-muted-foreground">Finish:</dt>
-                  <dd className="col-span-2">{product.finish || "N/A"}</dd>
+                  <dd>{product.finish || "N/A"}</dd>
                 </div>
-                <div className="grid grid-cols-3 gap-1">
+                <div className="grid grid-cols-[120px_1fr] gap-1">
                   <dt className="font-medium text-muted-foreground">Price:</dt>
-                  <dd className="col-span-2">{typeof product.price === 'number' ? `$${product.price.toLocaleString()}` : "N/A"}</dd>
+                  <dd>{typeof product.price === 'number' ? `$${product.price.toLocaleString()}` : "N/A"}</dd>
                 </div>
-                <div className="grid grid-cols-3 gap-1">
+                <div className="grid grid-cols-[120px_1fr] gap-1">
                   <dt className="font-medium text-muted-foreground">CBM:</dt>
-                  <dd className="col-span-2">{product.cbm || "N/A"}</dd>
+                  <dd>{product.cbm || "N/A"}</dd>
                 </div>
               </dl>
             </div>

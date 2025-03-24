@@ -8,14 +8,30 @@ import { ProductType } from "@/types/product";
 import { supabase } from "@/integrations/supabase/client";
 import { ensureStorageBuckets } from "@/integrations/supabase/ensureBuckets";
 import { toast } from "@/components/ui/use-toast";
+import { v4 as uuidv4 } from 'uuid';
 
 const Index = () => {
   const [products, setProducts] = useState<ProductType[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<ProductType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
+  const [userId, setUserId] = useState<string>("");
+  
   useEffect(() => {
+    // Load or create userId from localStorage for product isolation
+    const loadUserId = () => {
+      let id = localStorage.getItem('lamp_inventory_user_id');
+      if (!id) {
+        id = uuidv4();
+        localStorage.setItem('lamp_inventory_user_id', id);
+      }
+      setUserId(id);
+      return id;
+    };
+    
     const initApp = async () => {
+      // Get or create userId
+      const currentUserId = loadUserId();
+      
       // Make sure we have the necessary storage buckets
       try {
         await ensureStorageBuckets();
@@ -23,13 +39,13 @@ const Index = () => {
         console.error("Error ensuring storage buckets:", error);
       }
       
-      fetchProducts();
+      fetchProducts(currentUserId);
     };
     
     initApp();
   }, []);
   
-  const fetchProducts = async () => {
+  const fetchProducts = async (uid: string) => {
     setIsLoading(true);
     try {
       // Get all products with pagination to handle large datasets
@@ -42,6 +58,7 @@ const Index = () => {
         const { data, error } = await supabase
           .from('products')
           .select('*')
+          .eq('user_id', uid)
           .range(page * pageSize, (page + 1) * pageSize - 1)
           .order('code', { ascending: true });
           
@@ -90,7 +107,7 @@ const Index = () => {
 
   const handleProductsImport = (importedProducts: ProductType[]) => {
     // Refresh all products from the database after import
-    fetchProducts();
+    fetchProducts(userId);
   };
 
   const handleSearch = (searchTerm: string) => {
@@ -125,6 +142,7 @@ const Index = () => {
         <div className="container mx-auto px-4 py-6">
           <h1 className="text-3xl font-bold text-gray-900">Lamp Inventory Manager</h1>
           <p className="text-gray-600 mt-2">Manage your wooden, iron and sustainable lamps inventory</p>
+          <p className="text-sm text-muted-foreground mt-1">User ID: {userId}</p>
         </div>
       </header>
       
@@ -137,7 +155,11 @@ const Index = () => {
                 <CardDescription>Upload Excel file with product details</CardDescription>
               </CardHeader>
               <CardContent>
-                <ProductUploader onImport={handleProductsImport} setIsLoading={setIsLoading} />
+                <ProductUploader 
+                  onImport={handleProductsImport} 
+                  setIsLoading={setIsLoading}
+                  userId={userId}
+                />
               </CardContent>
             </Card>
 

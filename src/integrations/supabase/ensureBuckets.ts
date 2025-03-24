@@ -25,23 +25,24 @@ export const ensureStorageBuckets = async () => {
       } else {
         console.log('Created product-images bucket');
         
-        // Fix the type issue - use a proper RPC call without parameters
-        // or directly update bucket policy through the storage API
+        // Create public access policies for the bucket using Storage API
         try {
-          // Add a policy to make the bucket contents public
-          const { error: policyError } = await supabase.storage.from('product-images').createPolicy(
-            'public-read',
-            {
-              type: 'READ',
-              definition: {
-                role: '*'
-              }
-            }
-          );
+          // Add an UPSERT policy to allow uploading files
+          await supabase.storage.from('product-images').createPolicy({
+            name: 'public-read-write',
+            definition: {
+              role: '*'
+            },
+            type: 'READ'
+          });
           
-          if (policyError) {
-            console.error('Error setting bucket policy:', policyError);
-          }
+          await supabase.storage.from('product-images').createPolicy({
+            name: 'public-write',
+            definition: {
+              role: '*'
+            },
+            type: 'WRITE'
+          });
         } catch (policyError) {
           console.error('Error setting bucket policy:', policyError);
         }

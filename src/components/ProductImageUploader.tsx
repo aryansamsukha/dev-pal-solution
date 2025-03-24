@@ -7,10 +7,11 @@ import { supabase } from "@/integrations/supabase/client";
 
 interface ProductImageUploaderProps {
   productCode: string;
+  productId: string;
   onImageUploaded: (url: string) => void;
 }
 
-const ProductImageUploader = ({ productCode, onImageUploaded }: ProductImageUploaderProps) => {
+const ProductImageUploader = ({ productCode, productId, onImageUploaded }: ProductImageUploaderProps) => {
   const { toast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
 
