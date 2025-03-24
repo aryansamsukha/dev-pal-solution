@@ -25,9 +25,24 @@ export const ensureStorageBuckets = async () => {
       } else {
         console.log('Created product-images bucket');
         
-        // Set up bucket RLS policies
-        const { error: policyError } = await supabase.rpc('set_bucket_public', { bucket_name: 'product-images' });
-        if (policyError) {
+        // Fix the type issue - use a proper RPC call without parameters
+        // or directly update bucket policy through the storage API
+        try {
+          // Add a policy to make the bucket contents public
+          const { error: policyError } = await supabase.storage.from('product-images').createPolicy(
+            'public-read',
+            {
+              type: 'READ',
+              definition: {
+                role: '*'
+              }
+            }
+          );
+          
+          if (policyError) {
+            console.error('Error setting bucket policy:', policyError);
+          }
+        } catch (policyError) {
           console.error('Error setting bucket policy:', policyError);
         }
       }
