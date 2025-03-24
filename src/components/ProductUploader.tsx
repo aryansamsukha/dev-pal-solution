@@ -191,7 +191,7 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
               price: priceIndex !== -1 ? parsePrice(row[priceIndex]) : 0,
               cbm: cbmIndex !== -1 && row[cbmIndex] ? String(row[cbmIndex]) : "",
               description: descIndex !== -1 && row[descIndex] ? String(row[descIndex]) : "",
-              finish: finishIndex !== -1 && row[finishIndex] ? String(row[finishIndex]) : ""
+              finish: finishIndex !== -1 && row[finishIndex] ? String(row[finishIndex]) : undefined
             };
           }).filter((product): product is ProductType => product !== null);
           

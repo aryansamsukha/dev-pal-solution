@@ -7,5 +7,5 @@ export interface ProductType {
   price: number;
   cbm: string;
   description: string;
-  finish?: string;
+  finish?: string; // Keep this as optional with the question mark
 }
