@@ -8,6 +8,8 @@ import { ProductType } from "@/types/product";
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from "xlsx";
 import JSZip from "jszip";
+import { ensureStorageBuckets } from "@/integrations/supabase/ensureBuckets";
+import { saveAs } from "file-saver";
 
 interface ProductUploaderProps {
   onImport: (products: ProductType[]) => void;
@@ -54,21 +56,36 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
     try {
       setUploading(true);
       setIsLoading(true);
+      
+      // Ensure storage bucket exists
+      await ensureStorageBuckets();
+      
       const data = await readExcelFile(file);
       console.log("Imported data:", data); // Debug to see what was imported
       
+      // Filter out duplicates by code
+      const uniqueProducts = removeDuplicates(data, 'code');
+      
+      if (uniqueProducts.length < data.length) {
+        toast({
+          title: "Duplicate products found",
+          description: `${data.length - uniqueProducts.length} duplicate product(s) were skipped.`,
+          variant: "default",
+        });
+      }
+      
       // Upload images from zip if provided
       if (imagesZip) {
-        await processImageZip(imagesZip, data);
+        await processImageZip(imagesZip, uniqueProducts);
       }
       
       // Save to Supabase
-      await saveProductsToSupabase(data);
+      await saveProductsToSupabase(uniqueProducts);
       
-      onImport(data);
+      onImport(uniqueProducts);
       toast({
         title: "Import successful",
-        description: `${data.length} products imported`,
+        description: `${uniqueProducts.length} products imported`,
       });
     } catch (error) {
       console.error("Error importing file:", error);
@@ -84,6 +101,18 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
       setIsLoading(false);
     }
   };
+  
+  const removeDuplicates = <T extends Record<string, any>>(array: T[], key: keyof T): T[] => {
+    const seen = new Set();
+    return array.filter(item => {
+      const value = item[key];
+      if (value && !seen.has(value)) {
+        seen.add(value);
+        return true;
+      }
+      return false;
+    });
+  };
 
   const processImageZip = async (zipFile: File, products: ProductType[]) => {
     try {
@@ -97,6 +126,7 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
       });
       
       let uploadedCount = 0;
+      let skippedCount = 0;
       const productCodes = Array.from(productCodeMap.keys());
       
       // Process files in the zip
@@ -118,13 +148,13 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
           const product = productCodeMap.get(codeMatch);
           if (product) {
             const promise = zipEntry.async('blob').then(async (blob) => {
-              // Create a file from the blob
-              const file = new File([blob], `${product.code}.${fileName.split('.').pop()}`, { type: `image/${fileName.split('.').pop()}` });
-              
-              // Upload the file
-              const filePath = `${product.code}.${fileName.split('.').pop()}`;
-              
               try {
+                // Create a file from the blob
+                const file = new File([blob], `${product.code}.${fileName.split('.').pop()}`, { type: `image/${fileName.split('.').pop()}` });
+                
+                // Upload the file
+                const filePath = `${product.code}.${fileName.split('.').pop()}`;
+                
                 const { data, error } = await supabase.storage
                   .from('product-images')
                   .upload(filePath, file, { 
@@ -151,11 +181,19 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
                 uploadedCount++;
               } catch (error) {
                 console.error(`Error uploading image for ${product.code}:`, error);
+                skippedCount++;
               }
+            }).catch(error => {
+              console.error(`Error processing image for ${product.code}:`, error);
+              skippedCount++;
             });
             
             promises.push(promise);
+          } else {
+            skippedCount++;
           }
+        } else {
+          skippedCount++;
         }
       });
       
@@ -163,8 +201,10 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
       
       toast({
         title: "Images processed",
-        description: `${uploadedCount} images uploaded and linked to products.`
+        description: `${uploadedCount} images uploaded and linked to products. ${skippedCount} images skipped.`
       });
+      
+      return true;
     } catch (error) {
       console.error("Error processing zip file:", error);
       toast({
@@ -174,6 +214,7 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
           : "An error occurred while processing images",
         variant: "destructive",
       });
+      return false;
     }
   };
 
@@ -186,26 +227,42 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
       batches.push(products.slice(i, i + batchSize));
     }
     
+    let failedCount = 0;
+    
     for (const batch of batches) {
-      const { error } = await supabase
-        .from('products')
-        .upsert(
-          batch.map(product => ({
-            code: product.code,
-            description: product.description,
-            finish: product.finish,
-            dimensions: product.dimensions,
-            price: product.price,
-            cbm: product.cbm,
-            image_url: product.image
-          })),
-          { onConflict: 'code' }
-        );
+      try {
+        // Use upsert instead of insert to handle existing products
+        const { error } = await supabase
+          .from('products')
+          .upsert(
+            batch.map(product => ({
+              code: product.code,
+              description: product.description,
+              finish: product.finish ?? null,
+              dimensions: product.dimensions,
+              price: product.price,
+              cbm: product.cbm,
+              image_url: product.image
+            })),
+            { onConflict: 'code' }
+          );
 
-      if (error) {
-        console.error('Error saving products to Supabase:', error);
-        throw new Error(`Failed to save products: ${error.message}`);
+        if (error) {
+          console.error('Error saving products to Supabase:', error);
+          failedCount += batch.length;
+        }
+      } catch (error) {
+        console.error('Exception saving products to Supabase:', error);
+        failedCount += batch.length;
       }
+    }
+    
+    if (failedCount > 0) {
+      toast({
+        title: "Warning",
+        description: `${failedCount} products could not be saved to the database.`,
+        variant: "destructive",
+      });
     }
   };
 
@@ -226,7 +283,7 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
           
           // Find the header row (the one with "S.No.", "Item Code", etc.)
           let headerRowIndex = -1;
-          for (let i = 0; i < rawData.length; i++) {
+          for (let i = 0; i < Math.min(10, rawData.length); i++) {
             const row = rawData[i];
             if (Array.isArray(row) && row.some(cell => 
               typeof cell === 'string' && (
@@ -271,11 +328,13 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
               h.includes("Item Code") || h.includes("Code") || h.includes("Product Code")
             ));
             const descIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Description"));
-            const finishIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Finish"));
+            const finishIndex = headers.findIndex(h => typeof h === 'string' && (
+              h.includes("Finish") || h.includes("Material") || h.includes("Type")
+            ));
             
             // Look for dimension columns - either combined or separate L, W, H
             const dimensionsIndex = headers.findIndex(h => typeof h === 'string' && (
-              h.includes("Dimensions") || h.includes("Size")
+              h.includes("Dimensions") || h.includes("Size") || h.includes("Measurement")
             ));
             const lIndex = headers.findIndex(h => typeof h === 'string' && (
               h === "L" || h.toLowerCase().includes("length")
@@ -291,7 +350,7 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
               h.includes("Cbm") || h.includes("CBM") || h.includes("Volume")
             ));
             const priceIndex = headers.findIndex(h => typeof h === 'string' && (
-              h.includes("Price") || h.includes("Cost")
+              h.includes("Price") || h.includes("Cost") || h.includes("Rate")
             ));
             
             // Create dimensions string from combined dimension field or L, W, H values if available

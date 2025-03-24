@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Table,
   TableBody,
@@ -12,21 +12,31 @@ import { ProductType } from "@/types/product";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Search, Image as ImageIcon } from "lucide-react";
+import { Search, Image as ImageIcon, Download, Trash2 } from "lucide-react";
 import ProductDetail from "@/components/ProductDetail";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { generateQRCodeURL } from "@/utils/qrCode";
+import { useToast } from "@/components/ui/use-toast";
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
 
 interface ProductListProps {
   products: ProductType[];
   isLoading: boolean;
+  onProductDeleted?: (productId: string) => void;
 }
 
-const ProductList = ({ products, isLoading }: ProductListProps) => {
+const ProductList = ({ products, isLoading, onProductDeleted }: ProductListProps) => {
   const [localProducts, setLocalProducts] = useState<ProductType[]>(products);
+  const [isGeneratingQRs, setIsGeneratingQRs] = useState(false);
+  const { toast } = useToast();
   
   // Update local products when props change
-  if (JSON.stringify(products) !== JSON.stringify(localProducts)) {
-    setLocalProducts(products);
-  }
+  useEffect(() => {
+    if (JSON.stringify(products) !== JSON.stringify(localProducts)) {
+      setLocalProducts(products);
+    }
+  }, [products]);
 
   const handleImageUpdated = (productId: string, imageUrl: string) => {
     setLocalProducts(prevProducts => 
@@ -36,6 +46,16 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
           : product
       )
     );
+  };
+  
+  const handleProductDeleted = (productId: string) => {
+    setLocalProducts(prevProducts => 
+      prevProducts.filter(product => product.id !== productId)
+    );
+    
+    if (onProductDeleted) {
+      onProductDeleted(productId);
+    }
   };
 
   // Format dimensions for better display
@@ -66,6 +86,64 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
     
     return "";
   };
+  
+  const downloadAllQRCodes = async () => {
+    if (localProducts.length === 0) return;
+    
+    setIsGeneratingQRs(true);
+    toast({
+      title: "Generating QR codes",
+      description: "Creating QR codes for all products. This may take a moment..."
+    });
+    
+    try {
+      const zip = new JSZip();
+      const qrFolder = zip.folder("product-qr-codes");
+      
+      // Generate QR codes for all products
+      const qrPromises = localProducts.map(async (product) => {
+        try {
+          const productData = `https://${window.location.host}/product/${product.id}`;
+          const qrUrl = await generateQRCodeURL(productData, product.code);
+          
+          // Convert data URL to blob
+          const response = await fetch(qrUrl);
+          const blob = await response.blob();
+          
+          // Add to zip
+          qrFolder?.file(`${product.code}-qrcode.png`, blob);
+          
+          return true;
+        } catch (error) {
+          console.error(`Error generating QR for ${product.code}:`, error);
+          return false;
+        }
+      });
+      
+      // Wait for all QR codes to be generated
+      await Promise.all(qrPromises);
+      
+      // Generate the ZIP file
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      
+      // Save the ZIP file
+      saveAs(zipBlob, "product-qr-codes.zip");
+      
+      toast({
+        title: "QR codes downloaded",
+        description: `QR codes for ${localProducts.length} products have been downloaded.`
+      });
+    } catch (error) {
+      console.error("Error generating bulk QR codes:", error);
+      toast({
+        title: "Error generating QR codes",
+        description: "There was a problem generating the QR codes.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsGeneratingQRs(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -89,40 +167,93 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
   }
 
   return (
-    <div className="overflow-x-auto">
-      <Table className="min-w-full">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Image</TableHead>
-            <TableHead>Code</TableHead>
-            <TableHead>Dimensions (L x W x H)</TableHead>
-            <TableHead>Finish</TableHead>
-            <TableHead>Price</TableHead>
-            <TableHead>CBM</TableHead>
-            <TableHead>Description</TableHead>
-            <TableHead>Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {localProducts.map((product) => (
-            <TableRow key={product.id}>
-              <TableCell>
-                {product.image ? (
+    <div>
+      <div className="flex justify-end mb-4">
+        <Button 
+          className="flex items-center" 
+          onClick={downloadAllQRCodes}
+          disabled={isGeneratingQRs}
+        >
+          {isGeneratingQRs ? (
+            <>
+              <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent"></div>
+              Generating QR codes...
+            </>
+          ) : (
+            <>
+              <Download className="mr-2 h-4 w-4" />
+              Download All QR Codes
+            </>
+          )}
+        </Button>
+      </div>
+      
+      <div className="overflow-x-auto">
+        <Table className="min-w-full">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Image</TableHead>
+              <TableHead>Code</TableHead>
+              <TableHead>Dimensions (L x W x H)</TableHead>
+              <TableHead>Finish</TableHead>
+              <TableHead>Price</TableHead>
+              <TableHead>CBM</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {localProducts.map((product) => (
+              <TableRow key={product.id}>
+                <TableCell>
+                  {product.image ? (
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button variant="ghost" className="p-0 h-auto">
+                          <div className="h-12 w-12 overflow-hidden rounded border bg-muted">
+                            <AspectRatio ratio={1/1} className="h-full">
+                              <img
+                                src={product.image}
+                                alt={product.code}
+                                className="h-full w-full object-cover"
+                                onError={(e) => {
+                                  e.currentTarget.src = "/placeholder.svg";
+                                }}
+                              />
+                            </AspectRatio>
+                          </div>
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-4xl">
+                        <DialogHeader>
+                          <DialogTitle>Product {product.code}</DialogTitle>
+                        </DialogHeader>
+                        <ProductDetail 
+                          product={product} 
+                          onImageUpdated={handleImageUpdated}
+                          onProductDeleted={handleProductDeleted}
+                        />
+                      </DialogContent>
+                    </Dialog>
+                  ) : (
+                    <div className="h-12 w-12 flex items-center justify-center rounded border bg-muted">
+                      <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell className="font-medium">{product.code}</TableCell>
+                <TableCell className="whitespace-nowrap">{formatDimensions(product.dimensions)}</TableCell>
+                <TableCell>{product.finish || "N/A"}</TableCell>
+                <TableCell>{typeof product.price === 'number' ? `$${product.price.toLocaleString()}` : "N/A"}</TableCell>
+                <TableCell>{product.cbm || "N/A"}</TableCell>
+                <TableCell className="max-w-xs truncate" title={product.description}>
+                  {product.description || "N/A"}
+                </TableCell>
+                <TableCell>
                   <Dialog>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" className="p-0 h-auto">
-                        <div className="h-12 w-12 overflow-hidden rounded border bg-muted">
-                          <AspectRatio ratio={1/1} className="h-full">
-                            <img
-                              src={product.image}
-                              alt={product.code}
-                              className="h-full w-full object-cover"
-                              onError={(e) => {
-                                e.currentTarget.src = "/placeholder.svg";
-                              }}
-                            />
-                          </AspectRatio>
-                        </div>
+                      <Button variant="outline" size="sm">
+                        Details & QR
                       </Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-4xl">
@@ -132,45 +263,16 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
                       <ProductDetail 
                         product={product} 
                         onImageUpdated={handleImageUpdated}
+                        onProductDeleted={handleProductDeleted}
                       />
                     </DialogContent>
                   </Dialog>
-                ) : (
-                  <div className="h-12 w-12 flex items-center justify-center rounded border bg-muted">
-                    <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                  </div>
-                )}
-              </TableCell>
-              <TableCell className="font-medium">{product.code}</TableCell>
-              <TableCell className="whitespace-nowrap">{formatDimensions(product.dimensions)}</TableCell>
-              <TableCell>{product.finish}</TableCell>
-              <TableCell>{typeof product.price === 'number' ? `$${product.price.toLocaleString()}` : product.price}</TableCell>
-              <TableCell>{product.cbm}</TableCell>
-              <TableCell className="max-w-xs truncate" title={product.description}>
-                {product.description}
-              </TableCell>
-              <TableCell>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      Details & QR
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-4xl">
-                    <DialogHeader>
-                      <DialogTitle>Product {product.code}</DialogTitle>
-                    </DialogHeader>
-                    <ProductDetail 
-                      product={product} 
-                      onImageUpdated={handleImageUpdated}
-                    />
-                  </DialogContent>
-                </Dialog>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 };

@@ -54,7 +54,7 @@ const Index = () => {
             id: product.id || "",
             code: product.code || "",
             description: product.description || "",
-            finish: product.finish || "",
+            finish: product.finish || undefined,
             dimensions: product.dimensions || "",
             price: product.price || 0,
             cbm: product.cbm || "",
@@ -106,6 +106,18 @@ const Index = () => {
     );
     setFilteredProducts(filtered);
   };
+  
+  const handleProductDeleted = (productId: string) => {
+    // Update both products and filtered products
+    const updatedProducts = products.filter(product => product.id !== productId);
+    setProducts(updatedProducts);
+    setFilteredProducts(prevFiltered => prevFiltered.filter(product => product.id !== productId));
+    
+    toast({
+      title: "Product deleted",
+      description: "The product has been successfully deleted."
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -149,7 +161,11 @@ const Index = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <ProductList products={filteredProducts} isLoading={isLoading} />
+                <ProductList 
+                  products={filteredProducts} 
+                  isLoading={isLoading} 
+                  onProductDeleted={handleProductDeleted}
+                />
               </CardContent>
             </Card>
           </div>
