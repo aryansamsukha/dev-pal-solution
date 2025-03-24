@@ -147,9 +147,9 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
             const codeIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Item Code"));
             const descIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Description"));
             const finishIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Finish"));
-            const lIndex = headers.findIndex(h => typeof h === 'string' && h === "L");
-            const wIndex = headers.findIndex(h => typeof h === 'string' && h === "W");
-            const hIndex = headers.findIndex(h => typeof h === 'string' && h === "H");
+            const lIndex = headers.findIndex(h => typeof h === 'string' && (h === "L" || h.toLowerCase().includes("length")));
+            const wIndex = headers.findIndex(h => typeof h === 'string' && (h === "W" || h.toLowerCase().includes("width")));
+            const hIndex = headers.findIndex(h => typeof h === 'string' && (h === "H" || h.toLowerCase().includes("height")));
             const cbmIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Cbm"));
             const priceIndex = headers.findIndex(h => typeof h === 'string' && h.includes("Price"));
             
@@ -160,7 +160,7 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
               const w = row[wIndex];
               const h = row[hIndex];
               if (l && w && h) {
-                dimensions = `${l}x${w}x${h}`;
+                dimensions = `${l} x ${w} x ${h}`;
               }
             }
             
@@ -183,7 +183,7 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
             }
             
             // Build the product object
-            return {
+            const product: ProductType = {
               id: String(index), // Use index as fallback id
               code,
               image: "", // Will be populated through the image uploader
@@ -193,6 +193,8 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
               description: descIndex !== -1 && row[descIndex] ? String(row[descIndex]) : "",
               finish: finishIndex !== -1 && row[finishIndex] ? String(row[finishIndex]) : undefined
             };
+            
+            return product;
           }).filter((product): product is ProductType => product !== null);
           
           console.log("Mapped products:", products);

@@ -38,6 +38,18 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
     );
   };
 
+  // Format dimensions for better display
+  const formatDimensions = (dimensions: string) => {
+    if (!dimensions) return "";
+    
+    // If already in the format L x W x H, return as is
+    if (dimensions.includes("x")) return dimensions;
+    
+    // Try to parse dimensions if in another format
+    // For now, just return the original
+    return dimensions;
+  };
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-10">
@@ -66,7 +78,7 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
           <TableRow>
             <TableHead>Image</TableHead>
             <TableHead>Code</TableHead>
-            <TableHead>Dimensions</TableHead>
+            <TableHead>Dimensions (L x W x H)</TableHead>
             <TableHead>Finish</TableHead>
             <TableHead>Price</TableHead>
             <TableHead>CBM</TableHead>
@@ -113,7 +125,7 @@ const ProductList = ({ products, isLoading }: ProductListProps) => {
                 )}
               </TableCell>
               <TableCell className="font-medium">{product.code}</TableCell>
-              <TableCell>{product.dimensions}</TableCell>
+              <TableCell>{formatDimensions(product.dimensions)}</TableCell>
               <TableCell>{product.finish}</TableCell>
               <TableCell>{typeof product.price === 'number' ? `$${product.price.toLocaleString()}` : product.price}</TableCell>
               <TableCell>{product.cbm}</TableCell>

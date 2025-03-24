@@ -64,6 +64,18 @@ const ProductDetail = ({ product, onImageUpdated }: ProductDetailProps) => {
     document.body.removeChild(link);
   };
 
+  // Format dimensions for better display
+  const formatDimensions = (dimensions: string) => {
+    if (!dimensions) return "N/A";
+    
+    // If already in the format L x W x H, return as is
+    if (dimensions.includes("x")) return dimensions;
+    
+    // Try to parse dimensions if in another format
+    // For now, just return the original
+    return dimensions;
+  };
+
   return (
     <Card className="overflow-hidden">
       <CardHeader>
@@ -109,8 +121,8 @@ const ProductDetail = ({ product, onImageUpdated }: ProductDetailProps) => {
                 <dd className="col-span-2">{product.description || "N/A"}</dd>
               </div>
               <div className="grid grid-cols-3 gap-1">
-                <dt className="font-medium text-muted-foreground">Dimensions:</dt>
-                <dd className="col-span-2">{product.dimensions || "N/A"}</dd>
+                <dt className="font-medium text-muted-foreground">Dimensions (L x W x H):</dt>
+                <dd className="col-span-2">{formatDimensions(product.dimensions)}</dd>
               </div>
               <div className="grid grid-cols-3 gap-1">
                 <dt className="font-medium text-muted-foreground">Finish:</dt>
