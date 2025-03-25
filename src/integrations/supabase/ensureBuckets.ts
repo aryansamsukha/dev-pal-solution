@@ -32,8 +32,7 @@ export const ensureStorageBuckets = async () => {
             '.policy-dummy-file', 
             new Blob([''], { type: 'text/plain' }),
             { 
-              upsert: true,
-              public: true
+              upsert: true
             }
           );
           

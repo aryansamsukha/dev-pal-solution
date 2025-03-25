@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -107,106 +106,19 @@ const ProductUploader = ({ onImport, setIsLoading, userId }: ProductUploaderProp
     }
   };
 
-  const handleUpload = async () => {
-    if (!file && !imagesZip) {
-      toast({
-        title: "No files selected",
-        description: "Please select at least an Excel file or a ZIP file with images",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (imagesZip && !file) {
-      // Handle image-only upload
-      await handleImagesOnlyUpload();
-      return;
-    }
-
-    if (!file) {
-      toast({
-        title: "No Excel file selected",
-        description: "Please select an Excel file to import products",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      toast({
-        title: "Invalid file format",
-        description: "Please upload an Excel file (.xlsx or .xls)",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setUploading(true);
-      setIsLoading(true);
-      
-      // Ensure storage bucket exists
-      await ensureStorageBuckets();
-      
-      const data = await readExcelFile(file);
-      console.log("Imported data:", data); // Debug to see what was imported
-      
-      // Filter out duplicates by code
-      const uniqueProducts = removeDuplicates(data, 'code');
-      
-      if (uniqueProducts.length < data.length) {
-        toast({
-          title: "Duplicate products found",
-          description: `${data.length - uniqueProducts.length} duplicate product(s) were skipped.`,
-          variant: "default",
-        });
-      }
-      
-      // Upload images from zip if provided
-      if (imagesZip) {
-        await processImageZip(imagesZip, uniqueProducts);
-      }
-      
-      // Save to Supabase with user_id
-      await saveProductsToSupabase(uniqueProducts);
-      
-      onImport(uniqueProducts);
-      toast({
-        title: "Import successful",
-        description: `${uniqueProducts.length} products imported`,
-      });
-    } catch (error) {
-      console.error("Error importing file:", error);
-      toast({
-        title: "Import failed",
-        description: typeof error === 'object' && error !== null && 'message' in error 
-          ? String(error.message) 
-          : "An error occurred while importing your products",
-        variant: "destructive",
-      });
-    } finally {
-      setUploading(false);
-      setIsLoading(false);
-    }
-  };
-  
-  const removeDuplicates = <T extends Record<string, any>>(array: T[], key: keyof T): T[] => {
-    const seen = new Set();
-    return array.filter(item => {
-      const value = item[key];
-      if (value && !seen.has(value)) {
-        seen.add(value);
-        return true;
-      }
-      return false;
-    });
-  };
-
+  // Fix the type instantiation issue by simplifying the processImageZip function
   const processImageZip = async (zipFile: File, products: ProductType[]) => {
     try {
       const zip = new JSZip();
       const zipContents = await zip.loadAsync(zipFile);
-      const productCodeMap = new Map(products.map(p => [p.code.toLowerCase(), p]));
+      const productCodeMap = new Map<string, ProductType>();
+      
+      // Create a map of lowercase product codes to products for easier lookup
+      products.forEach(p => {
+        if (p.code) {
+          productCodeMap.set(p.code.toLowerCase(), p);
+        }
+      });
       
       toast({
         title: "Processing images",
@@ -220,7 +132,7 @@ const ProductUploader = ({ onImport, setIsLoading, userId }: ProductUploaderProp
       // Process files in the zip
       const promises: Promise<void>[] = [];
       
-      zipContents.forEach(async (relativePath, zipEntry) => {
+      zipContents.forEach((relativePath, zipEntry) => {
         if (zipEntry.dir) return;
         
         const fileName = relativePath.split('/').pop() || '';
@@ -229,7 +141,7 @@ const ProductUploader = ({ onImport, setIsLoading, userId }: ProductUploaderProp
         // Try to match the filename to a product code
         const codeMatch = productCodes.find(code => 
           fileName.toLowerCase().includes(code) ||
-          code.toLowerCase().includes(fileName.replace(/\.(jpg|jpeg|png|gif|webp)$/i, '').toLowerCase())
+          code.includes(fileName.replace(/\.(jpg|jpeg|png|gif|webp)$/i, '').toLowerCase())
         );
         
         if (codeMatch) {
