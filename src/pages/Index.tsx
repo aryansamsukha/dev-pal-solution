@@ -8,29 +8,56 @@ import { ProductType } from "@/types/product";
 import { supabase } from "@/integrations/supabase/client";
 import { ensureStorageBuckets } from "@/integrations/supabase/ensureBuckets";
 import { toast } from "@/components/ui/use-toast";
-import { v4 as uuidv4 } from 'uuid';
+import { Button } from "@/components/ui/button";
+import { Link, useNavigate } from "react-router-dom";
+import { LogOut } from "lucide-react";
 
 const Index = () => {
   const [products, setProducts] = useState<ProductType[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<ProductType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [userId, setUserId] = useState<string>("1"); // Default to "1" if none specified
+  const [userId, setUserId] = useState<string>("");
+  const [user, setUser] = useState<any>(null);
+  const navigate = useNavigate();
   
   useEffect(() => {
-    // Load or create userId from localStorage for product isolation
-    const loadUserId = () => {
-      let id = localStorage.getItem('lamp_inventory_user_id');
-      if (!id) {
-        id = userId || "1"; // Use existing state or default to "1"
-        localStorage.setItem('lamp_inventory_user_id', id);
+    // Check if user is authenticated
+    const checkAuth = async () => {
+      const { data } = await supabase.auth.getSession();
+      
+      if (data.session?.user) {
+        setUser(data.session.user);
+        setUserId(data.session.user.id);
+        localStorage.setItem('lamp_inventory_user_id', data.session.user.id);
+      } else {
+        // Use localStorage as fallback for development
+        const localUserId = localStorage.getItem('lamp_inventory_user_id');
+        if (localUserId) {
+          setUserId(localUserId);
+        } else {
+          // For development only - set to "1" if no user ID
+          setUserId("1");
+          localStorage.setItem('lamp_inventory_user_id', "1");
+        }
       }
-      setUserId(id);
-      return id;
     };
     
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (session?.user) {
+          setUser(session.user);
+          setUserId(session.user.id);
+          localStorage.setItem('lamp_inventory_user_id', session.user.id);
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          // Don't clear userId for development
+        }
+      }
+    );
+    
     const initApp = async () => {
-      // Get or create userId
-      const currentUserId = loadUserId();
+      await checkAuth();
       
       // Make sure we have the necessary storage buckets
       try {
@@ -38,12 +65,21 @@ const Index = () => {
       } catch (error) {
         console.error("Error ensuring storage buckets:", error);
       }
-      
-      fetchProducts(currentUserId);
     };
     
     initApp();
+    
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
+  
+  // Fetch products when userId is set
+  useEffect(() => {
+    if (userId) {
+      fetchProducts(userId);
+    }
+  }, [userId]);
   
   const fetchProducts = async (uid: string) => {
     setIsLoading(true);
@@ -136,13 +172,42 @@ const Index = () => {
     });
   };
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    toast({
+      title: "Logged out",
+      description: "You have been logged out successfully."
+    });
+    // In a real app, you'd navigate to login here
+    // navigate("/auth");
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm">
         <div className="container mx-auto px-4 py-6">
-          <h1 className="text-3xl font-bold text-gray-900">Lamp Inventory Manager</h1>
-          <p className="text-gray-600 mt-2">Manage your wooden, iron and sustainable lamps inventory</p>
-          <p className="text-sm text-muted-foreground mt-1">User ID: {userId}</p>
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Lamp Inventory Manager</h1>
+              <p className="text-gray-600 mt-2">Manage your wooden, iron and sustainable lamps inventory</p>
+              <p className="text-sm text-muted-foreground mt-1">User ID: {userId}</p>
+            </div>
+            <div>
+              {user ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">{user.email}</span>
+                  <Button variant="outline" size="sm" onClick={handleLogout}>
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Logout
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/auth">Login / Sign Up</Link>
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
       </header>
       

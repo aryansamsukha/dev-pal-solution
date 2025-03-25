@@ -8,4 +8,5 @@ export interface ProductType {
   cbm: string;
   description: string;
   finish?: string; // Keep this as optional with the question mark
+  user_id?: string; // Add user_id as optional for compatibility with existing code
 }
