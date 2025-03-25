@@ -14,9 +14,10 @@ import { saveAs } from "file-saver";
 interface ProductUploaderProps {
   onImport: (products: ProductType[]) => void;
   setIsLoading: (loading: boolean) => void;
+  userId: string;
 }
 
-const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
+const ProductUploader = ({ onImport, setIsLoading, userId }: ProductUploaderProps) => {
   const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null);
   const [imagesZip, setImagesZip] = useState<File | null>(null);
@@ -34,11 +35,98 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
     }
   };
 
+  const handleImagesOnlyUpload = async () => {
+    if (!imagesZip) {
+      toast({
+        title: "No ZIP file selected",
+        description: "Please select a ZIP file with images to upload",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setUploading(true);
+      setIsLoading(true);
+      
+      // Ensure storage bucket exists
+      await ensureStorageBuckets();
+      
+      // Fetch existing products for this user
+      const { data: existingProducts, error: fetchError } = await supabase
+        .from('products')
+        .select('code, id')
+        .eq('user_id', userId);
+      
+      if (fetchError) {
+        throw fetchError;
+      }
+      
+      if (!existingProducts || existingProducts.length === 0) {
+        toast({
+          title: "No products found",
+          description: "Please import an Excel file with products first before uploading images",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Format existing products for image processing
+      const productsForImageProcessing = existingProducts.map(product => ({
+        id: product.id,
+        code: product.code,
+        description: "",
+        dimensions: "",
+        price: 0,
+        cbm: "",
+        image: ""
+      }));
+      
+      // Process images
+      await processImageZip(imagesZip, productsForImageProcessing);
+      
+      toast({
+        title: "Images updated",
+        description: "Product images have been updated successfully",
+      });
+      
+      // Refresh products
+      onImport(productsForImageProcessing);
+    } catch (error) {
+      console.error("Error uploading images:", error);
+      toast({
+        title: "Upload failed",
+        description: typeof error === 'object' && error !== null && 'message' in error 
+          ? String(error.message) 
+          : "An error occurred while uploading images",
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+      setIsLoading(false);
+    }
+  };
+
   const handleUpload = async () => {
+    if (!file && !imagesZip) {
+      toast({
+        title: "No files selected",
+        description: "Please select at least an Excel file or a ZIP file with images",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (imagesZip && !file) {
+      // Handle image-only upload
+      await handleImagesOnlyUpload();
+      return;
+    }
+
     if (!file) {
       toast({
-        title: "No file selected",
-        description: "Please select an Excel file to import",
+        title: "No Excel file selected",
+        description: "Please select an Excel file to import products",
         variant: "destructive",
       });
       return;
@@ -79,7 +167,7 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
         await processImageZip(imagesZip, uniqueProducts);
       }
       
-      // Save to Supabase
+      // Save to Supabase with user_id
       await saveProductsToSupabase(uniqueProducts);
       
       onImport(uniqueProducts);
@@ -150,10 +238,10 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
             const promise = zipEntry.async('blob').then(async (blob) => {
               try {
                 // Create a file from the blob
-                const file = new File([blob], `${product.code}.${fileName.split('.').pop()}`, { type: `image/${fileName.split('.').pop()}` });
+                const file = new File([blob], `${product.code}-${userId}.${fileName.split('.').pop()}`, { type: `image/${fileName.split('.').pop()}` });
                 
-                // Upload the file
-                const filePath = `${product.code}.${fileName.split('.').pop()}`;
+                // Upload the file with user ID in the path
+                const filePath = `${userId}/${product.code}.${fileName.split('.').pop()}`;
                 
                 const { data, error } = await supabase.storage
                   .from('product-images')
@@ -176,7 +264,8 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
                 await supabase
                   .from('products')
                   .update({ image_url: publicUrl })
-                  .eq('code', product.code);
+                  .eq('code', product.code)
+                  .eq('user_id', userId);
                 
                 uploadedCount++;
               } catch (error) {
@@ -242,9 +331,10 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
               dimensions: product.dimensions,
               price: product.price,
               cbm: product.cbm,
-              image_url: product.image
+              image_url: product.image,
+              user_id: userId  // Add user_id to each product
             })),
-            { onConflict: 'code' }
+            { onConflict: 'code,user_id' }  // Update conflict detection to include user_id
           );
 
         if (error) {
@@ -332,10 +422,7 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
               h.includes("Finish") || h.includes("Material") || h.includes("Type")
             ));
             
-            // Look for dimension columns - either combined or separate L, W, H
-            const dimensionsIndex = headers.findIndex(h => typeof h === 'string' && (
-              h.includes("Dimensions") || h.includes("Size") || h.includes("Measurement")
-            ));
+            // Look for dimension columns - explicit search for L, W, H columns
             const lIndex = headers.findIndex(h => typeof h === 'string' && (
               h === "L" || h.toLowerCase().includes("length")
             ));
@@ -346,6 +433,11 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
               h === "H" || h.toLowerCase().includes("height")
             ));
             
+            // Look for combined dimensions column as fallback
+            const dimensionsIndex = headers.findIndex(h => typeof h === 'string' && (
+              h.includes("Dimensions") || h.includes("Size") || h.includes("Measurement")
+            ));
+            
             const cbmIndex = headers.findIndex(h => typeof h === 'string' && (
               h.includes("Cbm") || h.includes("CBM") || h.includes("Volume")
             ));
@@ -353,10 +445,14 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
               h.includes("Price") || h.includes("Cost") || h.includes("Rate")
             ));
             
-            // Create dimensions string from combined dimension field or L, W, H values if available
+            // Create dimensions string from L, W, H values if available, otherwise use combined field
             let dimensions = "";
-            if (dimensionsIndex !== -1 && row[dimensionsIndex]) {
-              // If we have a combined dimensions field
+            if (lIndex !== -1 && wIndex !== -1 && hIndex !== -1 && 
+                row[lIndex] && row[wIndex] && row[hIndex]) {
+              // If we have separate L, W, H columns with values
+              dimensions = `${row[lIndex]} x ${row[wIndex]} x ${row[hIndex]}`;
+            } else if (dimensionsIndex !== -1 && row[dimensionsIndex]) {
+              // If we have a combined dimensions field as fallback
               dimensions = String(row[dimensionsIndex]);
               
               // If the dimensions don't already contain 'x', format it
@@ -366,14 +462,6 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
                 if (dims.length === 3) {
                   dimensions = `${dims[0].trim()} x ${dims[1].trim()} x ${dims[2].trim()}`;
                 }
-              }
-            } else if (lIndex !== -1 && wIndex !== -1 && hIndex !== -1) {
-              // If we have separate L, W, H columns
-              const l = row[lIndex];
-              const w = row[wIndex];
-              const h = row[hIndex];
-              if (l && w && h) {
-                dimensions = `${l} x ${w} x ${h}`;
               }
             }
             
@@ -444,13 +532,13 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
           onChange={handleImageZipChange}
           className="cursor-pointer"
         />
-        <p className="text-xs text-muted-foreground">Optional: Upload ZIP file with product images (filenames should match product codes)</p>
+        <p className="text-xs text-muted-foreground">Upload ZIP file with product images (filenames should match product codes)</p>
       </div>
       
       <Button 
         onClick={handleUpload} 
         className="w-full"
-        disabled={!file || uploading}
+        disabled={uploading}
       >
         {uploading ? (
           <>
@@ -460,7 +548,7 @@ const ProductUploader = ({ onImport, setIsLoading }: ProductUploaderProps) => {
         ) : (
           <>
             <Upload className="mr-2 h-4 w-4" />
-            Import Products
+            Import Products {imagesZip && !file ? "(Images Only)" : ""}
           </>
         )}
       </Button>

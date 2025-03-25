@@ -14,14 +14,14 @@ const Index = () => {
   const [products, setProducts] = useState<ProductType[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<ProductType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [userId, setUserId] = useState<string>("");
+  const [userId, setUserId] = useState<string>("1"); // Default to "1" if none specified
   
   useEffect(() => {
     // Load or create userId from localStorage for product isolation
     const loadUserId = () => {
       let id = localStorage.getItem('lamp_inventory_user_id');
       if (!id) {
-        id = uuidv4();
+        id = userId || "1"; // Use existing state or default to "1"
         localStorage.setItem('lamp_inventory_user_id', id);
       }
       setUserId(id);

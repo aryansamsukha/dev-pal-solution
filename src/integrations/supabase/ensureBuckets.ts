@@ -25,24 +25,23 @@ export const ensureStorageBuckets = async () => {
       } else {
         console.log('Created product-images bucket');
         
-        // Create public access policies for the bucket using Storage API
+        // Create public policies using the correct method
         try {
-          // Add an UPSERT policy to allow uploading files
-          await supabase.storage.from('product-images').createPolicy({
-            name: 'public-read-write',
-            definition: {
-              role: '*'
-            },
-            type: 'READ'
-          });
+          // Create a public read policy for the bucket
+          const { error: readPolicyError } = await supabase.storage.from('product-images').upload(
+            '.policy-dummy-file', 
+            new Blob([''], { type: 'text/plain' }),
+            { 
+              upsert: true,
+              public: true
+            }
+          );
           
-          await supabase.storage.from('product-images').createPolicy({
-            name: 'public-write',
-            definition: {
-              role: '*'
-            },
-            type: 'WRITE'
-          });
+          if (readPolicyError) {
+            console.error('Error setting read policy:', readPolicyError);
+          } else {
+            console.log('Successfully set public read policy for product-images');
+          }
         } catch (policyError) {
           console.error('Error setting bucket policy:', policyError);
         }
