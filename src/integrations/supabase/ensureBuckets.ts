@@ -16,6 +16,7 @@ export const ensureStorageBuckets = async () => {
     if (!bucketExists) {
       // Create bucket if it doesn't exist
       const { error } = await supabase.storage.createBucket('product-images', {
+        public: true, // This is required based on the TypeScript error
         fileSizeLimit: 10485760 // 10MB limit
       });
       

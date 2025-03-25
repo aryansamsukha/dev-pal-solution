@@ -68,6 +68,7 @@ const ProductPage = () => {
         price: data.price || 0,
         cbm: data.cbm || "",
         image: data.image_url || "",
+        user_id: data.user_id || userId, // Add user_id to the product
       });
     } catch (error: any) {
       console.error("Error fetching product:", error);
@@ -126,7 +127,6 @@ const ProductPage = () => {
       <ProductDetail 
         product={product} 
         onImageUpdated={handleImageUpdated}
-        userId={userId}
       />
     </div>
   );

@@ -23,22 +23,29 @@ const Index = () => {
   useEffect(() => {
     // Check if user is authenticated
     const checkAuth = async () => {
-      const { data } = await supabase.auth.getSession();
-      
-      if (data.session?.user) {
-        setUser(data.session.user);
-        setUserId(data.session.user.id);
-        localStorage.setItem('lamp_inventory_user_id', data.session.user.id);
-      } else {
-        // Use localStorage as fallback for development
-        const localUserId = localStorage.getItem('lamp_inventory_user_id');
-        if (localUserId) {
-          setUserId(localUserId);
+      try {
+        const { data } = await supabase.auth.getSession();
+        
+        if (data.session?.user) {
+          setUser(data.session.user);
+          setUserId(data.session.user.id);
+          localStorage.setItem('lamp_inventory_user_id', data.session.user.id);
         } else {
-          // For development only - set to "1" if no user ID
-          setUserId("1");
-          localStorage.setItem('lamp_inventory_user_id', "1");
+          // Use localStorage as fallback for development
+          const localUserId = localStorage.getItem('lamp_inventory_user_id');
+          if (localUserId) {
+            setUserId(localUserId);
+          } else {
+            // For development only - set to "1" if no user ID
+            setUserId("1");
+            localStorage.setItem('lamp_inventory_user_id', "1");
+          }
         }
+      } catch (error) {
+        console.error("Error checking auth:", error);
+        // Fallback to default user ID
+        setUserId("1");
+        localStorage.setItem('lamp_inventory_user_id', "1");
       }
     };
     
@@ -143,7 +150,9 @@ const Index = () => {
 
   const handleProductsImport = (importedProducts: ProductType[]) => {
     // Refresh all products from the database after import
-    fetchProducts(userId);
+    if (userId) {
+      fetchProducts(userId);
+    }
   };
 
   const handleSearch = (searchTerm: string) => {

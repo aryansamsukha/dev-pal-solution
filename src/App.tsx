@@ -8,10 +8,19 @@ import Index from "./pages/Index";
 import ProductPage from "./pages/ProductPage";
 import NotFound from "./pages/NotFound";
 import Auth from "./pages/Auth";
+import React from "react"; // Import React explicitly
 
-const queryClient = new QueryClient();
+// Create a new QueryClient instance
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false, // Default behavior
+      retry: 1, // Retry failed queries once by default
+    },
+  },
+});
 
-const App = () => (
+const App: React.FC = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
